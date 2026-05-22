@@ -6,12 +6,16 @@ import axios from 'axios'
 dotenv.config()
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
-})
+  // Force IPv4 connectivity to bypass network routing issues with IPv6 (ENETUNREACH)
+  family: 4,
+} as any)
 
 /**
  * Send the daily USD/LKR AI Forecast email to active subscribers
@@ -45,7 +49,7 @@ export const sendForecastEmails = async (testEmail?: string) => {
     const color = diff >= 0 ? '#ef4444' : '#10b981' // Indigo-Red for up (LKR weaker), Emerald Green for down (LKR stronger)
 
     const backendUrl = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'
+    const frontendUrl = process.env.FRONTEND_URL || 'https://lk-vision.vercel.app/'
 
     // 4. Send emails
     for (const email of recipients) {
@@ -152,7 +156,7 @@ export const sendForecastEmails = async (testEmail?: string) => {
 export const sendWelcomeEmail = async (email: string) => {
   try {
     const backendUrl = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'
+    const frontendUrl = process.env.FRONTEND_URL || 'https://lk-vision.vercel.app/'
     const unsubscribeUrl = `${backendUrl}/api/subscribe/unsubscribe?email=${encodeURIComponent(email)}`
 
     const htmlContent = `
@@ -250,7 +254,7 @@ export const sendWelcomeEmail = async (email: string) => {
  */
 export const sendGoodbyeEmail = async (email: string) => {
   try {
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'
+    const frontendUrl = process.env.FRONTEND_URL || 'https://lk-vision.vercel.app/'
 
     const htmlContent = `
     <div style="background-color: #f8fafc; padding: 40px 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; line-height: 1.5; margin: 0;">
