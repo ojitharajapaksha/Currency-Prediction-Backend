@@ -132,17 +132,20 @@ app.use('/api/analytics', analyticsRoutes)
 app.use('/api/subscribe', subscribeRoutes)
 
 // Background Email Job
+import cron from 'node-cron'
 import { sendForecastEmails } from './emailService.js'
 
 const startEmailCronJob = () => {
-  // In a real production app, use node-cron: cron.schedule('0 8 * * *', ...)
-  // Here we simulate the cron job with setInterval (runs every 24h)
-  const ONE_DAY_MS = 24 * 60 * 60 * 1000
-  setInterval(async () => {
-    console.log(`\n📧 [EMAIL SERVICE] Triggered daily forecast email dispatch...`)
+  // Schedule forecast emails to go out every single day at exactly 8:00 AM Sri Lankan Time
+  cron.schedule('0 8 * * *', async () => {
+    console.log(`\n📧 [EMAIL SERVICE] Triggered daily forecast email dispatch at 8:00 AM Asia/Colombo...`)
     await sendForecastEmails()
     console.log(`📧 [EMAIL SERVICE] Daily dispatch process finished.\n`)
-  }, ONE_DAY_MS)
+  }, {
+    timezone: 'Asia/Colombo'
+  })
+
+  console.log('📅 [EMAIL SERVICE] Cron job registered for 8:00 AM daily (Asia/Colombo)')
 }
 
 // 404 handler
