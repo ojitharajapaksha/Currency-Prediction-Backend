@@ -11,17 +11,39 @@ if (typeof dns.setDefaultResultOrder === 'function') {
 
 dotenv.config()
 
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  // Force IPv4 connectivity to bypass network routing issues with IPv6 (ENETUNREACH)
-  family: 4,
-} as any)
+let cachedTransporter: nodemailer.Transporter | null = null
+
+const getTransporter = async () => {
+  if (cachedTransporter) return cachedTransporter
+
+  let host = 'smtp.gmail.com'
+  try {
+    const dns = await import('node:dns/promises')
+    const addresses = await dns.resolve4(host)
+    if (addresses.length > 0) {
+      const ip = addresses[0]
+      console.log(`📡 [EMAIL SERVICE] Resolved ${host} to IPv4: ${ip}`)
+      host = ip
+    }
+  } catch (err) {
+    console.warn(`⚠️ [EMAIL SERVICE] Failed to resolve ${host} via dns.resolve4, using hostname directly:`, err)
+  }
+
+  cachedTransporter = nodemailer.createTransport({
+    host,
+    port: 465,
+    secure: true,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+    tls: {
+      servername: 'smtp.gmail.com',
+    },
+  } as any)
+
+  return cachedTransporter
+}
 
 /**
  * Send the daily USD/LKR AI Forecast email to active subscribers
@@ -140,7 +162,8 @@ export const sendForecastEmails = async (testEmail?: string) => {
       </div>
       `
 
-      await transporter.sendMail({
+      const mailTransporter = await getTransporter()
+      await mailTransporter.sendMail({
         from: '"LKRVision AI" <' + process.env.SMTP_USER + '>',
         to: email,
         subject: `USD/LKR AI Forecast: Rs. ${predictionData.prediction.toFixed(2)} (${trend})`,
@@ -240,7 +263,8 @@ export const sendWelcomeEmail = async (email: string) => {
     </div>
     `
 
-    await transporter.sendMail({
+    const mailTransporter = await getTransporter()
+    await mailTransporter.sendMail({
       from: '"LKRVision AI" <' + process.env.SMTP_USER + '>',
       to: email,
       subject: `Welcome to LKRVision Daily Forecasts! 🎉`,
@@ -314,7 +338,8 @@ export const sendGoodbyeEmail = async (email: string) => {
     </div>
     `
 
-    await transporter.sendMail({
+    const mailTransporter = await getTransporter()
+    await mailTransporter.sendMail({
       from: '"LKRVision AI" <' + process.env.SMTP_USER + '>',
       to: email,
       subject: `Unsubscribed from LKRVision Forecasts`,
