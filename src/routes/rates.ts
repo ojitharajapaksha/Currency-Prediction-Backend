@@ -50,7 +50,7 @@ router.get('/historical', async (req: Request, res: Response) => {
 
     const rates = await Rate.find({
       date: { $gte: startDate },
-      source: 'historical',
+      source: { $in: ['historical', 'excel-real-data', 'simulated-fallback', 'real-time', 'frankfurter-api'] },
     })
       .sort({ date: 1 })
       .exec()
