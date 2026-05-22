@@ -41,6 +41,64 @@ const connectDB = async () => {
   }
 }
 
+// ─── Database Seeding ─────────────────────────────────────────────────────────
+import Rate from './models/Rate.js'
+import Forecast from './models/Forecast.js'
+import { fetchHistoricalRates, fetchRealExchangeRate } from './lib/exchange-rate-api.js'
+import { generateMlForecast } from './lib/ml-client.js'
+
+const seedDatabase = async () => {
+  try {
+    const rateCount = await Rate.countDocuments()
+    if (rateCount > 0) {
+      console.log(`✓ Database already seeded with ${rateCount} rate records — skipping.`)
+      return
+    }
+
+    console.log('⚙️  Seeding database with historical rates...')
+
+    // Seed 90 days of historical data
+    const historicalRates = await fetchHistoricalRates(90, 'USD', 'LKR')
+    await Rate.insertMany(historicalRates)
+    console.log(`✓ Inserted ${historicalRates.length} historical rate records.`)
+
+    // Seed current rate
+    const currentRateValue = await fetchRealExchangeRate('USD', 'LKR')
+    const currentRate = new Rate({
+      date: new Date(),
+      rate: currentRateValue,
+      source: 'real-time',
+    })
+    await currentRate.save()
+    console.log(`✓ Inserted current rate: ${currentRateValue}`)
+
+    // Auto-generate 7-day forecasts using ML service
+    try {
+      const history = historicalRates.map((r: any) => r.rate)
+      history.push(currentRateValue)
+      const mlResponse = await generateMlForecast(7, history)
+      const forecastsToInsert = mlResponse.forecasts.map((f: any) => ({
+        date: new Date(f.date),
+        prediction: parseFloat(f.prediction.toFixed(2)),
+        confidence: parseFloat(f.confidence.toFixed(2)),
+        days_ahead: f.days_ahead,
+        rmse: f.rmse,
+        mae: f.mae,
+        model_version: 'ml-service',
+      }))
+      await Forecast.insertMany(forecastsToInsert)
+      console.log(`✓ Auto-generated ${forecastsToInsert.length} forecast records.`)
+    } catch (mlErr) {
+      console.warn('⚠️  ML forecast seeding skipped (ML service may not be ready yet):', mlErr instanceof Error ? mlErr.message : mlErr)
+    }
+
+    console.log('✅ Database seeding complete!')
+  } catch (err) {
+    console.error('✗ Database seeding failed:', err)
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Error handling middleware
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error('Error:', err)
@@ -90,6 +148,7 @@ app.use((req: Request, res: Response) => {
 const startServer = async () => {
   try {
     await connectDB()
+    await seedDatabase()
     
     app.listen(PORT, () => {
       console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
