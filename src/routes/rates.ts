@@ -14,7 +14,7 @@ const router: Router = express.Router()
  */
 router.get('/current', async (req: Request, res: Response) => {
   try {
-    const rate = await Rate.findOne({ source: 'real-time' })
+    const rate = await Rate.findOne({ source: { $in: ['real-time', 'frankfurter-api'] } })
       .sort({ date: -1 })
       .exec()
 
