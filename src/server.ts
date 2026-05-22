@@ -3,6 +3,12 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import mongoose from 'mongoose'
 import { z } from 'zod'
+import dns from 'node:dns'
+
+// Force IPv4 connectivity globally for this Node.js process to bypass network routing issues with IPv6 (ENETUNREACH)
+if (typeof dns.setDefaultResultOrder === 'function') {
+  dns.setDefaultResultOrder('ipv4first')
+}
 
 // Routes
 import healthRoutes from './routes/health.js'

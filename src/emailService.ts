@@ -2,6 +2,12 @@ import nodemailer from 'nodemailer'
 import Subscriber from './models/Subscriber.js'
 import dotenv from 'dotenv'
 import axios from 'axios'
+import dns from 'node:dns'
+
+// Force IPv4 connectivity globally for this Node.js process to bypass network routing issues with IPv6 (ENETUNREACH)
+if (typeof dns.setDefaultResultOrder === 'function') {
+  dns.setDefaultResultOrder('ipv4first')
+}
 
 dotenv.config()
 
