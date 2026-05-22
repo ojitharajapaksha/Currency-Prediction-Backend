@@ -49,20 +49,29 @@ import { generateMlForecast } from './lib/ml-client.js'
 
 const seedDatabase = async () => {
   try {
-    const rateCount = await Rate.countDocuments()
-    if (rateCount > 0) {
-      console.log(`✓ Database already seeded with ${rateCount} rate records — skipping.`)
+    // Check if we already have REAL data (from Excel or live API)
+    const realDataCount = await Rate.countDocuments({ source: { $in: ['excel-real-data', 'real-time'] } })
+    const simulatedCount = await Rate.countDocuments({ source: { $in: ['historical', 'simulated-fallback'] } })
+
+    if (realDataCount > 0) {
+      console.log(`✓ Database already has ${realDataCount} real rate records — skipping seed.`)
       return
     }
 
-    console.log('⚙️  Seeding database with historical rates...')
+    if (simulatedCount > 0) {
+      console.log(`⚙️  Found ${simulatedCount} simulated records — replacing with real data...`)
+      await Rate.deleteMany({ source: { $in: ['historical', 'simulated-fallback'] } })
+      await Forecast.deleteMany({})
+    }
 
-    // Seed 90 days of historical data
-    const historicalRates = await fetchHistoricalRates(90, 'USD', 'LKR')
+    console.log('⚙️  Seeding database with REAL historical rates from Excel dataset...')
+
+    // Seed with real historical data from the ML service Excel file
+    const historicalRates = await fetchHistoricalRates(365, 'USD', 'LKR')
     await Rate.insertMany(historicalRates)
-    console.log(`✓ Inserted ${historicalRates.length} historical rate records.`)
+    console.log(`✓ Inserted ${historicalRates.length} REAL historical rate records.`)
 
-    // Seed current rate
+    // Seed current rate from live API
     const currentRateValue = await fetchRealExchangeRate('USD', 'LKR')
     const currentRate = new Rate({
       date: new Date(),
@@ -70,7 +79,7 @@ const seedDatabase = async () => {
       source: 'real-time',
     })
     await currentRate.save()
-    console.log(`✓ Inserted current rate: ${currentRateValue}`)
+    console.log(`✓ Inserted REAL current rate: ${currentRateValue} LKR`)
 
     // Auto-generate 7-day forecasts using ML service
     try {
@@ -87,12 +96,12 @@ const seedDatabase = async () => {
         model_version: 'ml-service',
       }))
       await Forecast.insertMany(forecastsToInsert)
-      console.log(`✓ Auto-generated ${forecastsToInsert.length} forecast records.`)
+      console.log(`✓ Auto-generated ${forecastsToInsert.length} forecast records from real data.`)
     } catch (mlErr) {
       console.warn('⚠️  ML forecast seeding skipped (ML service may not be ready yet):', mlErr instanceof Error ? mlErr.message : mlErr)
     }
 
-    console.log('✅ Database seeding complete!')
+    console.log('✅ Database seeding with REAL data complete!')
   } catch (err) {
     console.error('✗ Database seeding failed:', err)
   }
