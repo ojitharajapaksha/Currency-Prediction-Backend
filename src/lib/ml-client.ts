@@ -27,7 +27,7 @@ export async function getMlFeatureImportance(): Promise<any> {
   return response.data
 }
 
-export async function getMlShapValues(features: number[]): Promise<any> {
+export async function getMlShapValues(features: number[] | number[][]): Promise<any> {
   const response = await axios.post(`${mlServiceUrl}/api/shap-values`, {
     features,
   })

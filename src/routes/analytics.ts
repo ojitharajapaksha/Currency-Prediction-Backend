@@ -65,10 +65,6 @@ router.get('/shap-summary', async (req: Request, res: Response) => {
 
     const history = recentRates.map((rate) => rate.rate)
     
-    // Instead of faking, we will genuinely compute SHAP for the upcoming days 
-    // by appending the predicted values dynamically.
-    const shapedSummary = []
-    
     // First we need the forecasts to build real feature vectors
     const forecasts = await Forecast.find()
       .sort({ date: 1 })
@@ -76,13 +72,33 @@ router.get('/shap-summary', async (req: Request, res: Response) => {
       .exec()
 
     let workingHistory = [...history]
+    const featureVectors: number[][] = []
 
     for (let i = 0; i < Math.min(daysInt, forecasts.length); i++) {
       const forecast = forecasts[i]
       const featureVector = buildFeatureVector(workingHistory, new Date(forecast.date))
-      
-      const shapResponse = await getMlShapValues(featureVector)
-      const featureImpacts = shapResponse.feature_importance || []
+      featureVectors.push(featureVector)
+      workingHistory.push(forecast.prediction)
+    }
+
+    if (featureVectors.length === 0) {
+      return res.json({
+        window: '0 days',
+        data: [],
+        interpretation: {
+          positive: 'Features contributing to rate increase',
+          negative: 'Features contributing to rate decrease',
+          neutral: 'Features with minimal impact',
+        },
+      })
+    }
+
+    // Call ML service in a single batch request!
+    const shapResponse = await getMlShapValues(featureVectors)
+    const batchResults = shapResponse.batch_results || []
+
+    const shapedSummary = batchResults.map((result: any, i: number) => {
+      const featureImpacts = result.feature_importance || []
       
       let positiveImpact = 0
       let negativeImpact = 0
@@ -94,15 +110,13 @@ router.get('/shap-summary', async (req: Request, res: Response) => {
 
       const neutralImpact = Math.max(0.01, 1 - positiveImpact - negativeImpact)
 
-      shapedSummary.push({
+      return {
         date: `Day ${i + 1}`,
         positive_impact: Number(positiveImpact.toFixed(4)),
         negative_impact: Number(negativeImpact.toFixed(4)),
         neutral_impact: Number(neutralImpact.toFixed(4)),
-      })
-
-      workingHistory.push(forecast.prediction)
-    }
+      }
+    })
 
     res.json({
       window: `${shapedSummary.length} days`,
