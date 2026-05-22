@@ -16,30 +16,39 @@ let cachedTransporter: nodemailer.Transporter | null = null
 const getTransporter = async () => {
   if (cachedTransporter) return cachedTransporter
 
-  let host = 'smtp.gmail.com'
-  try {
-    const dns = await import('node:dns/promises')
-    const addresses = await dns.resolve4(host)
-    if (addresses.length > 0) {
-      const ip = addresses[0]
-      console.log(`📡 [EMAIL SERVICE] Resolved ${host} to IPv4: ${ip}`)
-      host = ip
+  let host = process.env.SMTP_HOST || 'smtp.gmail.com'
+  const port = parseInt(process.env.SMTP_PORT || '465')
+  const secure = process.env.SMTP_SECURE === 'true' || (!process.env.SMTP_PORT && port === 465)
+
+  let servername: string | undefined = undefined
+
+  // Only perform dynamic IPv4 pre-resolution for secure Gmail SMTP to avoid DNS / TLS handshake issues on other providers
+  if (host === 'smtp.gmail.com' && port === 465) {
+    try {
+      const dns = await import('node:dns/promises')
+      const addresses = await dns.resolve4(host)
+      if (addresses.length > 0) {
+        const ip = addresses[0]
+        console.log(`📡 [EMAIL SERVICE] Resolved ${host} to IPv4: ${ip}`)
+        servername = host
+        host = ip
+      }
+    } catch (err) {
+      console.warn(`⚠️ [EMAIL SERVICE] Failed to resolve ${host} via dns.resolve4, using hostname directly:`, err)
     }
-  } catch (err) {
-    console.warn(`⚠️ [EMAIL SERVICE] Failed to resolve ${host} via dns.resolve4, using hostname directly:`, err)
   }
+
+  console.log(`🔌 [EMAIL SERVICE] Creating transporter for ${host}:${port} (secure: ${secure})`)
 
   cachedTransporter = nodemailer.createTransport({
     host,
-    port: 465,
-    secure: true,
+    port,
+    secure,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
-    tls: {
-      servername: 'smtp.gmail.com',
-    },
+    ...(servername ? { tls: { servername } } : {})
   } as any)
 
   return cachedTransporter
