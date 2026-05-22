@@ -166,7 +166,7 @@ router.put('/refresh-historical', async (req: Request, res: Response) => {
     startDate.setDate(startDate.getDate() - days)
     await Rate.deleteMany({
       date: { $gte: startDate },
-      source: { $in: ['historical', 'simulated-realistic-data', 'frankfurter-api'] },
+      source: { $in: ['historical', 'simulated-realistic-data', 'frankfurter-api', 'excel-real-data', 'simulated-fallback'] },
     })
 
     // Insert new rates

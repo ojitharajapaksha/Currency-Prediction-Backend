@@ -37,7 +37,7 @@ const RateSchema: Schema = new Schema(
     source: {
       type: String,
       default: 'historical',
-      enum: ['historical', 'real-time', 'frankfurter-api', 'simulated-realistic-data'],
+      enum: ['historical', 'real-time', 'frankfurter-api', 'simulated-realistic-data', 'excel-real-data', 'simulated-fallback'],
     },
   },
   {
