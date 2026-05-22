@@ -85,7 +85,7 @@ export const sendForecastEmails = async (testEmail?: string) => {
     const trend = diff >= 0 ? '▲ Up' : '▼ Down'
     const color = diff >= 0 ? '#ef4444' : '#10b981' // Indigo-Red for up (LKR weaker), Emerald Green for down (LKR stronger)
 
-    const backendUrl = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`
+    const backendUrl = process.env.BACKEND_URL || (process.env.NODE_ENV === 'production' ? 'https://currency-prediction-backend.onrender.com' : `http://localhost:${process.env.PORT || 5000}`)
     const frontendUrl = process.env.FRONTEND_URL || 'https://lk-vision.vercel.app/'
 
     // 4. Send emails
@@ -193,7 +193,7 @@ export const sendForecastEmails = async (testEmail?: string) => {
  */
 export const sendWelcomeEmail = async (email: string) => {
   try {
-    const backendUrl = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`
+    const backendUrl = process.env.BACKEND_URL || (process.env.NODE_ENV === 'production' ? 'https://currency-prediction-backend.onrender.com' : `http://localhost:${process.env.PORT || 5000}`)
     const frontendUrl = process.env.FRONTEND_URL || 'https://lk-vision.vercel.app/'
     const unsubscribeUrl = `${backendUrl}/api/subscribe/unsubscribe?email=${encodeURIComponent(email)}`
 
