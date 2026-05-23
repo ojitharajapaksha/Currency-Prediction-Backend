@@ -201,16 +201,15 @@ router.put('/refresh-historical', async (req: Request, res: Response) => {
 
     const historicalRates = await fetchHistoricalRates(days, 'USD', 'LKR')
 
-    // Remove existing historical rates for this period
-    const startDate = new Date()
-    startDate.setDate(startDate.getDate() - days)
-    await Rate.deleteMany({
-      date: { $gte: startDate },
-      source: { $in: ['historical', 'simulated-realistic-data', 'frankfurter-api', 'excel-real-data', 'simulated-fallback'] },
-    })
-
-    // Insert new rates
-    await Rate.insertMany(historicalRates)
+    // Upsert rates using bulkWrite to prevent unique index/duplicate key (E11000) crashes
+    const operations = historicalRates.map((r: any) => ({
+      updateOne: {
+        filter: { date: r.date },
+        update: { $set: r },
+        upsert: true,
+      },
+    }))
+    await Rate.bulkWrite(operations)
 
     // Update prediction history actuals
     for (const r of historicalRates) {
