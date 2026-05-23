@@ -1,6 +1,7 @@
 import express, { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import Rate from '../models/Rate.js'
+import PredictionHistory from '../models/PredictionHistory.js'
 import { buildFeatureVector, toTrend } from '../lib/feature-engineering.js'
 import { predictWithMl } from '../lib/ml-client.js'
 import { fetchRealExchangeRate, fetchHistoricalRates } from '../lib/exchange-rate-api.js'
@@ -90,13 +91,18 @@ router.post('/predict-tomorrow', async (req: Request, res: Response) => {
     let prediction = currentRate.rate
     let confidence = 80
     let modelSource = 'fallback'
+    let isAnomaly = false
+    let warning: string | undefined = undefined
 
     try {
       const mlResponse = await predictWithMl(featureVector)
       prediction = mlResponse.prediction
       confidence = mlResponse.confidence
+      isAnomaly = !!mlResponse.is_anomaly
+      warning = mlResponse.warning
       modelSource = 'ml-service'
     } catch (mlError) {
+      console.warn('ML Service prediction failed, executing fallback rolling logic:', mlError)
       const recentWindow = recentRates.slice(-7).map((rate) => rate.rate)
       const averageChange = recentWindow.length > 1
         ? recentWindow.slice(1).reduce((sum, value, index) => sum + (value - recentWindow[index]), 0) /
@@ -106,13 +112,31 @@ router.post('/predict-tomorrow', async (req: Request, res: Response) => {
       confidence = 72
     }
 
+    const tomorrowDate = new Date(new Date().getTime() + 24 * 60 * 60 * 1000)
+    tomorrowDate.setHours(0, 0, 0, 0)
+
+    // Save prediction history record
+    await PredictionHistory.findOneAndUpdate(
+      { target_date: tomorrowDate },
+      {
+        prediction_date: new Date(),
+        predicted_rate: parseFloat(prediction.toFixed(2)),
+        confidence: parseFloat(Math.min(95, confidence).toFixed(2)),
+        is_anomaly: isAnomaly,
+        warning: warning,
+      },
+      { upsert: true, new: true }
+    )
+
     res.json({
       current_rate: currentRate.rate,
       prediction: parseFloat(prediction.toFixed(2)),
       confidence: parseFloat(Math.min(95, confidence).toFixed(2)),
-      date: new Date(new Date().getTime() + 24 * 60 * 60 * 1000),
+      date: tomorrowDate,
       model_source: modelSource,
       features_used: featureVector.length,
+      is_anomaly: isAnomaly,
+      warning: warning,
     })
   } catch (error) {
     res.status(500).json({ error: 'Failed to generate prediction' })
@@ -135,6 +159,22 @@ router.get('/fetch-live', async (req: Request, res: Response) => {
     })
 
     await newRate.save()
+
+    // Update prediction history for today
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    const matchedPrediction = await PredictionHistory.findOne({ target_date: today })
+    if (matchedPrediction) {
+      const error = Math.abs(matchedPrediction.predicted_rate - realRate)
+      const error_percentage = (error / realRate) * 100
+      
+      matchedPrediction.actual_rate = realRate
+      matchedPrediction.error = parseFloat(error.toFixed(4))
+      matchedPrediction.error_percentage = parseFloat(error_percentage.toFixed(4))
+      await matchedPrediction.save()
+      console.log(`✓ Prediction history updated for date ${today.toLocaleDateString()}`)
+    }
 
     res.json({
       rate: realRate,
@@ -171,6 +211,23 @@ router.put('/refresh-historical', async (req: Request, res: Response) => {
 
     // Insert new rates
     await Rate.insertMany(historicalRates)
+
+    // Update prediction history actuals
+    for (const r of historicalRates) {
+      const date = new Date(r.date)
+      date.setHours(0, 0, 0, 0)
+      
+      const matchedPrediction = await PredictionHistory.findOne({ target_date: date })
+      if (matchedPrediction) {
+        const error = Math.abs(matchedPrediction.predicted_rate - r.rate)
+        const error_percentage = (error / r.rate) * 100
+        
+        matchedPrediction.actual_rate = r.rate
+        matchedPrediction.error = parseFloat(error.toFixed(4))
+        matchedPrediction.error_percentage = parseFloat(error_percentage.toFixed(4))
+        await matchedPrediction.save()
+      }
+    }
 
     res.json({
       message: `Successfully refreshed ${historicalRates.length} historical rates`,

@@ -4,6 +4,7 @@ import dotenv from 'dotenv'
 import mongoose from 'mongoose'
 import { z } from 'zod'
 import dns from 'node:dns'
+import { WebSocketServer } from 'ws'
 
 // Force IPv4 connectivity globally for this Node.js process to bypass network routing issues with IPv6 (ENETUNREACH)
 if (typeof dns.setDefaultResultOrder === 'function') {
@@ -168,7 +169,7 @@ const startServer = async () => {
     await connectDB()
     await seedDatabase()
     
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
       console.log(`  LKRVision AI Backend`)
       console.log(`  Server running on http://localhost:${PORT}`)
@@ -177,6 +178,68 @@ const startServer = async () => {
       
       startEmailCronJob()
     })
+
+    // Attach WebSocket server directly to the Express server instance
+    console.log('🔌 [WEBSOCKET] Attaching WebSocketServer to HTTP listener...')
+    const wss = new WebSocketServer({ server })
+
+    wss.on('connection', (ws) => {
+      console.log('🔌 [WEBSOCKET] Client connected')
+      
+      ws.on('close', () => {
+        console.log('🔌 [WEBSOCKET] Client disconnected')
+      })
+    })
+
+    const broadcastRate = (rateData: any) => {
+      const payload = JSON.stringify({ type: 'rate-update', data: rateData })
+      wss.clients.forEach((client) => {
+        if (client.readyState === 1) { // WebSocket.OPEN is 1
+          client.send(payload)
+        }
+      })
+    }
+
+    // 60-second polling interval for live rate streaming and broadcast
+    setInterval(async () => {
+      try {
+        console.log('📡 [WEBSOCKET] Fetching live rate for real-time broadcast...')
+        const realRate = await fetchRealExchangeRate('USD', 'LKR')
+
+        // Save to database
+        const newRate = new Rate({
+          date: new Date(),
+          rate: realRate,
+          source: 'frankfurter-api',
+        })
+        await newRate.save()
+
+        // Sync prediction history actuals
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const PredictionHistory = (await import('./models/PredictionHistory.js')).default
+        const matchedPrediction = await PredictionHistory.findOne({ target_date: today })
+        if (matchedPrediction) {
+          const error = Math.abs(matchedPrediction.predicted_rate - realRate)
+          const error_percentage = (error / realRate) * 100
+          
+          matchedPrediction.actual_rate = realRate
+          matchedPrediction.error = parseFloat(error.toFixed(4))
+          matchedPrediction.error_percentage = parseFloat(error_percentage.toFixed(4))
+          await matchedPrediction.save()
+        }
+
+        // Emit rate-update via WebSocket
+        broadcastRate({
+          rate: realRate,
+          date: new Date(),
+          source: 'frankfurter-api',
+        })
+        console.log(`📡 [WEBSOCKET] Broadcasted live rate update: ${realRate} LKR`)
+      } catch (err) {
+        console.error('[WEBSOCKET] Real-time rate fetch/broadcast failed:', err)
+      }
+    }, 60 * 1000)
   } catch (error) {
     console.error('Failed to start server:', error)
     process.exit(1)

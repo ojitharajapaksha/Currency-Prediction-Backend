@@ -7,6 +7,8 @@ export interface MlPredictionResponse {
   confidence: number
   features_used?: number
   timestamp?: string
+  is_anomaly?: boolean
+  warning?: string
 }
 
 export async function predictWithMl(features: number[]): Promise<MlPredictionResponse> {
@@ -19,6 +21,8 @@ export async function predictWithMl(features: number[]): Promise<MlPredictionRes
     confidence: Number(response.data.confidence),
     features_used: response.data.features_used,
     timestamp: response.data.timestamp,
+    is_anomaly: response.data.is_anomaly,
+    warning: response.data.warning,
   }
 }
 

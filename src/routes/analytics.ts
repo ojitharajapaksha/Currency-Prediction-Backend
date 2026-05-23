@@ -1,6 +1,7 @@
 import express, { Router, Request, Response } from 'express'
 import Forecast from '../models/Forecast.js'
 import Rate from '../models/Rate.js'
+import PredictionHistory from '../models/PredictionHistory.js'
 import { buildFeatureVector } from '../lib/feature-engineering.js'
 import { getMlFeatureImportance, getMlShapValues } from '../lib/ml-client.js'
 
@@ -172,6 +173,67 @@ router.get('/model-performance', async (req: Request, res: Response) => {
     })
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch model performance' })
+  }
+})
+
+/**
+ * GET /api/analytics/accuracy
+ * Get historical prediction accuracy history
+ */
+router.get('/accuracy', async (req: Request, res: Response) => {
+  try {
+    const history = await PredictionHistory.find({ actual_rate: { $exists: true, $ne: null } })
+      .sort({ target_date: 1 })
+      .exec()
+
+    if (history.length === 0) {
+      return res.json({
+        mae: 0,
+        rmse: 0,
+        mape: 0,
+        average_accuracy: 100,
+        count: 0,
+        data: []
+      })
+    }
+
+    const n = history.length
+    let absoluteErrorSum = 0
+    let squaredErrorSum = 0
+    let errorPercentageSum = 0
+
+    history.forEach((record) => {
+      const error = record.error || Math.abs(record.predicted_rate - (record.actual_rate || record.predicted_rate))
+      const errorPercent = record.error_percentage || (record.actual_rate ? (error / record.actual_rate) * 100 : 0)
+
+      absoluteErrorSum += error
+      squaredErrorSum += error ** 2
+      errorPercentageSum += errorPercent
+    })
+
+    const mae = absoluteErrorSum / n
+    const rmse = Math.sqrt(squaredErrorSum / n)
+    const mape = errorPercentageSum / n
+    const averageAccuracy = 100 - mape
+
+    res.json({
+      mae: parseFloat(mae.toFixed(4)),
+      rmse: parseFloat(rmse.toFixed(4)),
+      mape: parseFloat(mape.toFixed(4)),
+      average_accuracy: parseFloat(averageAccuracy.toFixed(2)),
+      count: n,
+      data: history.map((h) => ({
+        date: h.target_date,
+        predicted: h.predicted_rate,
+        actual: h.actual_rate,
+        error: h.error,
+        error_percentage: h.error_percentage,
+        confidence: h.confidence
+      }))
+    })
+  } catch (error) {
+    console.error('Accuracy tracker error:', error)
+    res.status(500).json({ error: 'Failed to fetch accuracy history' })
   }
 })
 
