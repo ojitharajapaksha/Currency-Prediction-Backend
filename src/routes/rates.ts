@@ -152,19 +152,24 @@ router.get('/fetch-live', async (req: Request, res: Response) => {
     const realRate = await fetchRealExchangeRate('USD', 'LKR')
 
     // Save to database
-    const newRate = new Rate({
-      date: new Date(),
-      rate: realRate,
-      source: 'frankfurter-api',
-    })
-
-    await newRate.save()
+    const today = new Date()
+    today.setUTCHours(0, 0, 0, 0)
+    await Rate.findOneAndUpdate(
+      { date: today },
+      {
+        $set: {
+          rate: realRate,
+          source: 'frankfurter-api',
+        }
+      },
+      { upsert: true }
+    )
 
     // Update prediction history for today
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    const todayLocal = new Date()
+    todayLocal.setHours(0, 0, 0, 0)
     
-    const matchedPrediction = await PredictionHistory.findOne({ target_date: today })
+    const matchedPrediction = await PredictionHistory.findOne({ target_date: todayLocal })
     if (matchedPrediction) {
       const error = Math.abs(matchedPrediction.predicted_rate - realRate)
       const error_percentage = (error / realRate) * 100
@@ -173,7 +178,7 @@ router.get('/fetch-live', async (req: Request, res: Response) => {
       matchedPrediction.error = parseFloat(error.toFixed(4))
       matchedPrediction.error_percentage = parseFloat(error_percentage.toFixed(4))
       await matchedPrediction.save()
-      console.log(`✓ Prediction history updated for date ${today.toLocaleDateString()}`)
+      console.log(`✓ Prediction history updated for date ${todayLocal.toLocaleDateString()}`)
     }
 
     res.json({
@@ -260,7 +265,35 @@ router.get('/historical-data', async (req: Request, res: Response) => {
       params: { range }
     })
     
-    res.json(mlResponse.data)
+    const excelData = mlResponse.data
+    if (Array.isArray(excelData) && excelData.length > 0) {
+      const latestExcelDateStr = excelData[excelData.length - 1].date // YYYY-MM-DD
+      const latestExcelDate = new Date(`${latestExcelDateStr}T00:00:00.000Z`)
+
+      // Query database for rates newer than the latest date in the Excel file
+      const dbRates = await Rate.find({
+        date: { $gt: latestExcelDate },
+        source: { $in: ['real-time', 'frankfurter-api'] }
+      })
+        .sort({ date: 1 })
+        .exec()
+
+      // Convert dbRates to the same historical data format and append them
+      const additionalPoints = dbRates.map(r => {
+        const dateStr = r.date.toISOString().slice(0, 10)
+        return {
+          date: dateStr,
+          open: r.rate,
+          high: r.rate,
+          low: r.rate,
+          close: r.rate
+        }
+      })
+
+      excelData.push(...additionalPoints)
+    }
+
+    res.json(excelData)
   } catch (error: any) {
     console.error('Error fetching historical data from ML service:', error.message)
     res.status(500).json({ error: 'Failed to fetch historical data', details: error.message })

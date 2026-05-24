@@ -80,12 +80,18 @@ const seedDatabase = async () => {
 
     // Seed current rate from live API
     const currentRateValue = await fetchRealExchangeRate('USD', 'LKR')
-    const currentRate = new Rate({
-      date: new Date(),
-      rate: currentRateValue,
-      source: 'real-time',
-    })
-    await currentRate.save()
+    const today = new Date()
+    today.setUTCHours(0, 0, 0, 0)
+    await Rate.findOneAndUpdate(
+      { date: today },
+      {
+        $set: {
+          rate: currentRateValue,
+          source: 'real-time',
+        }
+      },
+      { upsert: true }
+    )
     console.log(`✓ Inserted REAL current rate: ${currentRateValue} LKR`)
 
     // Auto-generate 7-day forecasts using ML service
@@ -207,18 +213,24 @@ const startServer = async () => {
         const realRate = await fetchRealExchangeRate('USD', 'LKR')
 
         // Save to database
-        const newRate = new Rate({
-          date: new Date(),
-          rate: realRate,
-          source: 'frankfurter-api',
-        })
-        await newRate.save()
+        const today = new Date()
+        today.setUTCHours(0, 0, 0, 0)
+        await Rate.findOneAndUpdate(
+          { date: today },
+          {
+            $set: {
+              rate: realRate,
+              source: 'frankfurter-api',
+            }
+          },
+          { upsert: true }
+        )
 
         // Sync prediction history actuals
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
+        const todayLocal = new Date()
+        todayLocal.setHours(0, 0, 0, 0)
         const PredictionHistory = (await import('./models/PredictionHistory.js')).default
-        const matchedPrediction = await PredictionHistory.findOne({ target_date: today })
+        const matchedPrediction = await PredictionHistory.findOne({ target_date: todayLocal })
         if (matchedPrediction) {
           const error = Math.abs(matchedPrediction.predicted_rate - realRate)
           const error_percentage = (error / realRate) * 100

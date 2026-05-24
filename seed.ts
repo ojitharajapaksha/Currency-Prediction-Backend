@@ -24,8 +24,10 @@ async function seedDatabase() {
     const currentRate = await fetchRealExchangeRate('USD', 'LKR')
     
     // Add current rate with today's date
+    const today = new Date()
+    today.setUTCHours(0, 0, 0, 0)
     const todayRate = {
-      date: new Date(),
+      date: today,
       rate: currentRate,
       source: 'frankfurter-api',
     }
