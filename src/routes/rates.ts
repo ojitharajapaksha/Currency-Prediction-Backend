@@ -76,9 +76,10 @@ router.get('/historical', async (req: Request, res: Response) => {
 router.post('/predict-tomorrow', async (req: Request, res: Response) => {
   try {
     const recentRates = await Rate.find()
-      .sort({ date: 1 })
+      .sort({ date: -1 })
       .limit(60)
       .exec()
+    recentRates.reverse()
 
     const currentRate = recentRates[recentRates.length - 1]
 

@@ -20,13 +20,14 @@ router.post('/', async (req: Request, res: Response) => {
     const { days } = ForecastRequestSchema.parse(req.body)
 
     const rateHistory = await Rate.find()
-      .sort({ date: 1 })
+      .sort({ date: -1 })
       .limit(120)
       .exec()
+    rateHistory.reverse()
 
-    const currentRate = (await Rate.findOne({ source: 'real-time' })
+    const currentRate = (await Rate.findOne({ source: { $in: ['real-time', 'frankfurter-api'] } })
       .sort({ date: -1 })
-      .exec()) || rateHistory[rateHistory.length - 1]
+      .exec()) || (await Rate.findOne().sort({ date: -1 }).exec()) || rateHistory[rateHistory.length - 1]
 
     if (!currentRate) {
       return res.status(404).json({ error: 'No current rate available' })

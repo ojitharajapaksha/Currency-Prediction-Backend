@@ -47,3 +47,8 @@ export async function generateMlForecast(days: number, history: number[]): Promi
 
   return response.data
 }
+
+export async function getMlModelMetrics(): Promise<any> {
+  const response = await axios.get(`${mlServiceUrl}/api/model-metrics`)
+  return response.data
+}
